@@ -235,16 +235,16 @@ Yolo::~Yolo() {
 }
 
 void Yolo::load(const std::string& param_path, const std::string& model_path) {
-    std::cout << "[DEBUG] Yolo::load() param: " << param_path << ", model: " << model_path << std::endl;
+    std::cout << "[DEBUG] :: Yolo::load() param: " << param_path << ", model: " << model_path << std::endl;
     yolov5.load_param(param_path.c_str());
     yolov5.load_model(model_path.c_str());
-    std::cout << "[DEBUG] Yolo::load() completed" << std::endl;
+    std::cout << "[DEBUG] :: Yolo::load() completed" << std::endl;
 }
 
 
 int Yolo::detect(cv::Mat bgr, std::vector<Object>& objects, int target_size, float prob_threshold, float nms_threshold){
-    std::cout << "[DEBUG] Yolo::detect()" << std::endl;
-    std::cout << "[DEBUG] Input Image Size: " << bgr.cols << "x" << bgr.rows << std::endl;
+    // std::cout << "[DEBUG] Yolo::detect()" << std::endl;
+    // std::cout << "[DEBUG] Input Image Size: " << bgr.cols << "x" << bgr.rows << std::endl;
 
     // load image, resize and letterbox pad to multiple of max_stride
     const int img_w = bgr.cols;
@@ -267,7 +267,7 @@ int Yolo::detect(cv::Mat bgr, std::vector<Object>& objects, int target_size, flo
         h = target_size;
         w = w * scale;
     }
-    std::cout << "[DEBUG] Resize to: " << w << "x" << h << std::endl;
+    // std::cout << "[DEBUG] Resize to: " << w << "x" << h << std::endl;
 
     // construct ncnn::Mat from image pixel data, swap order from bgr to rgb
     ncnn::Mat in = ncnn::Mat::from_pixels_resize(bgr.data, ncnn::Mat::PIXEL_BGR2RGB, img_w, img_h, w, h);
@@ -393,13 +393,13 @@ cv::Mat Yolo::draw_result(const cv::Mat& bgr, const std::vector<Object>& objects
     {
         const Object& obj = objects[i];
 
-        fprintf(stderr, "%d = %.5f at %.2f %.2f %.2f x %.2f\n", obj.label, obj.prob,
+        fprintf(stderr, "%d = %.2f at %.2f %.2f %.2f x %.2f\n", obj.label, obj.prob,
                 obj.rect.x, obj.rect.y, obj.rect.width, obj.rect.height);
 
         cv::rectangle(image, obj.rect, cv::Scalar(255, 0, 0));
 
         char text[256];
-        sprintf(text, "%s %.1f%%", class_names[obj.label], obj.prob);
+        sprintf(text, "%s %.1f", class_names[obj.label], obj.prob);
 
         int baseLine = 0;
         cv::Size label_size = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1, &baseLine);
@@ -438,12 +438,16 @@ std::vector<cv::Mat> Yolo::crop_objects(const cv::Mat& bgr, const std::vector<Ob
     return crops;
 }
 
-void Yolo::calc_distance(std::vector<Object>& objects, const cv::Point2f& point) {
+void Yolo::calc_distance(std::vector<Object>& objects, const cv::Point2f& point, cv::Mat& image) {
     for (auto& obj : objects) {
         float center_x = obj.rect.x + obj.rect.width / 2;
         float center_y = obj.rect.y + obj.rect.height / 2;
         float distance = std::sqrt(std::pow(center_x - point.x, 2) + std::pow(center_y - point.y, 2));
         obj.prob = distance; // prob 필드에 거리 저장
+
+        cv::circle(image, point, 3, cv::Scalar(0, 255, 0), -1);            // 이미지에 포인트 표시
+        // Draw line between point and object center
+        cv::line(image, point, cv::Point2f(center_x, center_y), cv::Scalar(0, 255, 0), 2);
     }
     std::sort(objects.begin(), objects.end(), [](const Object& a, const Object& b) {
         return a.prob < b.prob;
