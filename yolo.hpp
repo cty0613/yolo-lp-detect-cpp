@@ -10,6 +10,7 @@ struct Object
     cv::Rect_<float> rect;
     int label;
     float prob;
+    std::string ocr_result = "AA99A9999";
 };
 
 class Yolo

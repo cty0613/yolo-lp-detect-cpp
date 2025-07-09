@@ -2,16 +2,16 @@
 #include <iostream>
 #include <sys/stat.h>
 
-PlateOCR::PlateOCR(const std::string& preprocess_dir) : preprocess_dir(preprocess_dir) {
+PlatePrep::PlatePrep(const std::string& preprocess_dir) : preprocess_dir(preprocess_dir) {
     mkdir(this->preprocess_dir.c_str(), 0777);
 }
 
-void PlateOCR::save(const cv::Mat& img, const std::string& filename) {
+void PlatePrep::save(const cv::Mat& img, const std::string& filename) {
     std::string full_path = preprocess_dir + "/" + filename;
     cv::imwrite(full_path, img);
 }
 
-std::vector<cv::Point2f> PlateOCR::order_points(const std::vector<cv::Point>& pts) {
+std::vector<cv::Point2f> PlatePrep::order_points(const std::vector<cv::Point>& pts) {
     std::vector<cv::Point2f> src(4);
 
     auto sum = [](const cv::Point2f& p) { return p.x + p.y; };
@@ -25,7 +25,7 @@ std::vector<cv::Point2f> PlateOCR::order_points(const std::vector<cv::Point>& pt
     return src;
 }
 
-void PlateOCR::remove_side_dots(cv::Mat& img) {
+void PlatePrep::remove_side_dots(cv::Mat& img) {
     int img_width = img.cols;
     int img_height = img.rows;
 
@@ -36,7 +36,7 @@ void PlateOCR::remove_side_dots(cv::Mat& img) {
     save(img, "08_upper_cover.png");
 }
 
-cv::Mat PlateOCR::preprocess(const cv::Mat& input, float resize_factor) {
+cv::Mat PlatePrep::preprocess(const cv::Mat& input, float resize_factor) {
     cv::Mat gray, resized, binary, kernel;
     cv::cvtColor(input, gray, cv::COLOR_BGR2GRAY);
     cv::resize(gray, resized, cv::Size(), resize_factor, resize_factor, cv::INTER_CUBIC);
@@ -46,29 +46,29 @@ cv::Mat PlateOCR::preprocess(const cv::Mat& input, float resize_factor) {
     return binary;
 }
 
-std::string PlateOCR::ocr_eng(const cv::Mat& image, const std::string& whitelist) {
-    tesseract::TessBaseAPI tess;
-    tess.Init(NULL, "eng", tesseract::OEM_LSTM_ONLY);
-    tess.SetVariable("tessedit_char_whitelist", whitelist.c_str());
-    tess.SetPageSegMode(tesseract::PSM_SINGLE_LINE);
-    tess.SetImage(image.data, image.cols, image.rows, 1, image.step);
-    std::string out = tess.GetUTF8Text();
-    tess.End();
-    return out;
-}
+// std::string PlatePrep::ocr_eng(const cv::Mat& image, const std::string& whitelist) {
+//     tesseract::TessBaseAPI tess;
+//     tess.Init(NULL, "eng", tesseract::OEM_LSTM_ONLY);
+//     tess.SetVariable("tessedit_char_whitelist", whitelist.c_str());
+//     tess.SetPageSegMode(tesseract::PSM_SINGLE_LINE);
+//     tess.SetImage(image.data, image.cols, image.rows, 1, image.step);
+//     std::string out = tess.GetUTF8Text();
+//     tess.End();
+//     return out;
+// }
 
-std::string PlateOCR::ocr_kor(const cv::Mat& image, const std::string& whitelist) {
-    tesseract::TessBaseAPI tess;
-    tess.Init(NULL, "kor", tesseract::OEM_LSTM_ONLY);
-    tess.SetVariable("tessedit_char_whitelist", whitelist.c_str());
-    tess.SetPageSegMode(tesseract::PSM_SINGLE_LINE);
-    tess.SetImage(image.data, image.cols, image.rows, 1, image.step);
-    std::string out = tess.GetUTF8Text();
-    tess.End();
-    return out;
-}
+// std::string PlatePrep::ocr_kor(const cv::Mat& image, const std::string& whitelist) {
+//     tesseract::TessBaseAPI tess;
+//     tess.Init(NULL, "kor", tesseract::OEM_LSTM_ONLY);
+//     tess.SetVariable("tessedit_char_whitelist", whitelist.c_str());
+//     tess.SetPageSegMode(tesseract::PSM_SINGLE_LINE);
+//     tess.SetImage(image.data, image.cols, image.rows, 1, image.step);
+//     std::string out = tess.GetUTF8Text();
+//     tess.End();
+//     return out;
+// }
 
-bool PlateOCR::extract_plate_region(const cv::Mat& input, cv::Mat& output_plate, const std::string& prefix) {
+bool PlatePrep::extract_plate_region(const cv::Mat& input, cv::Mat& output_plate, const std::string& prefix) {
     cv::Mat hsv;
     cv::cvtColor(input, hsv, cv::COLOR_BGR2HSV);
     save(hsv, prefix + "01_hsv.png");
@@ -135,47 +135,43 @@ bool PlateOCR::extract_plate_region(const cv::Mat& input, cv::Mat& output_plate,
     return true;
 }
 
-OcrResult PlateOCR::process_plate(const cv::Mat& input_img, int index) {
-    OcrResult result;
-    result.number = index;
-    result.reliability = -1;
-    result.lpNum = "";
-    result.success = false;
+cv::Mat PlatePrep::preprocess_plate(const cv::Mat& input_img, int index) {
+    cv::Mat plate_img_origin = input_img.clone();
 
     cv::Mat plate_img;
     if (!extract_plate_region(input_img, plate_img, "img_" + std::to_string(index) + "_")) {
         // std::cout << "❌ [" << index << "] 번호판 사각형 추출 실패" << std::endl;
-        return result;
+        return plate_img_origin;
     }
+
+    return plate_img; // Return the processed plate image
     
     // 번호판 상하단 영역 분리
-    cv::Mat upper, lower;
-    int h = plate_img.rows;
-    upper = plate_img(cv::Range(0, static_cast<int>(h * 0.4)), cv::Range::all()).clone();
-    lower = plate_img(cv::Range(static_cast<int>(h * 0.3), h), cv::Range::all()).clone();
+    // cv::Mat upper, lower;
+    // int h = plate_img.rows;
+    // upper = plate_img(cv::Range(0, static_cast<int>(h * 0.4)), cv::Range::all()).clone();
+    // lower = plate_img(cv::Range(static_cast<int>(h * 0.3), h), cv::Range::all()).clone();
 
-    // 전처리
-    cv::Mat bin_upper = preprocess(upper);
-    cv::Mat bin_lower = preprocess(lower);
+    // // 전처리
+    // cv::Mat bin_upper = preprocess(upper);
+    // cv::Mat bin_lower = preprocess(lower);
 
-    remove_side_dots(bin_upper);
-    save(bin_upper, "img_" + std::to_string(index) + "_" + "07_upper_image.png");
-    save(bin_lower, "img_" + std::to_string(index) + "_" + "07_lower_image.png");
+    // remove_side_dots(bin_upper);
+    // save(bin_upper, "img_" + std::to_string(index) + "_" + "07_upper_image.png");
+    // save(bin_lower, "img_" + std::to_string(index) + "_" + "07_lower_image.png");
 
     // OCR (Tesseract 호출)
-    std::string upper_text = ocr_eng(bin_upper, "0123456789");
-    std::string lower_text = ocr_kor(bin_lower, "0123456789가나다라마바사아자하허호");
+    // std::string upper_text = ocr_eng(bin_upper, "0123456789");
+    // std::string lower_text = ocr_kor(bin_lower, "0123456789가나다라마바사아자하허호");
 
-    // 텍스트 정리
-    std::string cleaned_upper, cleaned_lower;
-    for (char c : upper_text) if (std::isdigit(c)) cleaned_upper += c;
-    for (char c : lower_text) if (std::isdigit(c) || (c & 0x80)) cleaned_lower += c;
+    // // 텍스트 정리
+    // std::string cleaned_upper, cleaned_lower;
+    // for (char c : upper_text) if (std::isdigit(c)) cleaned_upper += c;
+    // for (char c : lower_text) if (std::isdigit(c) || (c & 0x80)) cleaned_lower += c;
 
-    // 판단
-    result.reliability = (!cleaned_upper.empty() && !cleaned_lower.empty()) ? 1 :
-                         (!cleaned_lower.empty()) ? 0 : -1;
-    result.lpNum = cleaned_upper + " " + cleaned_lower;
-    result.success = (result.reliability != -1);
-
-    return result;
+    // // 판단
+    // result.reliability = (!cleaned_upper.empty() && !cleaned_lower.empty()) ? 1 :
+    //                      (!cleaned_lower.empty()) ? 0 : -1;
+    // result.lpNum = cleaned_upper + " " + cleaned_lower;
+    // result.success = (result.reliability != -1);
 }
