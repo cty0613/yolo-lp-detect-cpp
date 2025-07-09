@@ -15,40 +15,33 @@
 #include <iostream>                   // std::cout
 #include <chrono>                     // std::chrono
 
-// Removed Unix Domain Sockets includes
-
 #include "yolo.hpp"                   // Yolo 클래스 정의
 #include "plate.hpp"
-#include "tf_ocr.hpp"                // TFOCR 클래스 정의
+#include "tf_ocr.hpp"                 // TFOCR 클래스 정의
 #include "json.hpp"                   // JSON 라이브러리
+
 using json = nlohmann::json;
-
-constexpr int WIDTH = 1280;          
-constexpr int HEIGHT = 720;          
-constexpr int CH = 3;                
-
-// Shared memory constants
-constexpr size_t MAX_IMAGE_BUFFER_SIZE = 2 * 1024 * 1024; // 1MB for compressed image data
-
-// Structure for shared memory image data
-struct ShmImage {
-    uint32_t size; // Size of the image data
-    uint32_t frame_id; // To indicate new data
-    uchar data[MAX_IMAGE_BUFFER_SIZE]; // Image data
-};
 
 std::queue<cv::Mat> img_queue;        // 프레임 임시 저장 큐
 std::mutex mtx;                       // 큐 보호용 뮤텍스
 std::condition_variable cvn;          // 데이터 유무 통지용
+
+const char* SHM_FRAME_NAME = "/busbom_frame";
+constexpr int WIDTH = 1280;          
+constexpr int HEIGHT = 720;          
+constexpr int CH = 3;                
+
+const char* SHM_COFIG_NAME = "/camera_config";
+const size_t SHM_CONFIG_SIZE = 4096; // 4KB
+
+const char* SHM_SEQUENCE_NAME = "/busbom_sequence";
+const size_t SHM_SEQUENCE_SIZE = 4096; // 4KB
 
 // For OCR processing
 struct OcrInput {
     cv::Mat image;
     int index;
 };
-std::queue<OcrInput> ocr_queue;
-std::mutex ocr_mtx;
-std::condition_variable ocr_cvn;
 
 // 공유 메모리에서 프레임을 읽어 큐에 삽입
 void reader_thread()
@@ -138,6 +131,38 @@ void inference_thread()
             std::cout << "OCR Result for index " << i << ": " << each_result << std::endl;
             objects[i].ocr_result = each_result; // OCR 결과 저장
 
+        }
+        
+        // Create JSON object from 'objects' and write to shared memory
+        json json_objects = json::array();
+        for (size_t i = 0; i < objects.size(); ++i) {
+            json_objects.push_back({
+                {"platform", static_cast<int>(i) + 1},
+                {"status", "approaching"},
+                {"busNumber", objects[i].ocr_result}
+            });
+        }
+
+        // Write JSON to shared memory
+        int shm_fd = shm_open(SHM_SEQUENCE_NAME, O_CREAT | O_RDWR, 0666);
+        if (shm_fd == -1) {
+            std::cerr << "Failed to open shared memory for sequence: " << strerror(errno) << std::endl;
+        } else {
+            if (ftruncate(shm_fd, SHM_SEQUENCE_SIZE) == -1) {
+                std::cerr << "Failed to set shared memory size for sequence: " << strerror(errno) << std::endl;
+            } else {
+                char* shm_ptr = (char*)mmap(0, SHM_SEQUENCE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+                if (shm_ptr == MAP_FAILED) {
+                    std::cerr << "Failed to map shared memory for sequence: " << strerror(errno) << std::endl;
+                } else {
+                    std::string json_str = json_objects.dump();
+                    strncpy(shm_ptr, json_str.c_str(), SHM_SEQUENCE_SIZE - 1);
+                    shm_ptr[SHM_SEQUENCE_SIZE - 1] = '\0'; // Ensure null termination
+
+                    munmap(shm_ptr, SHM_SEQUENCE_SIZE);
+                }
+            }
+            close(shm_fd);
         }
         
         // frame, objects -> yolo.draw_result() -> one_shot
